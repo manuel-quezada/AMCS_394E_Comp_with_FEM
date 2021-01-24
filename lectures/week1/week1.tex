@@ -1,0 +1,768 @@
+%\documentclass{beamer}
+\documentclass[usenames,dvipsnames]{beamer}
+
+% Setup appearance:
+\usetheme{Boadilla}
+\usefonttheme[onlylarge]{structurebold}
+\setbeamerfont*{frametitle}{size=\normalsize,series=\bfseries}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{}
+%\usepackage[para]{footmisc}
+\setbeamertemplate{blocks}[rounded][shadow=false]
+
+\usepackage{mwe,tikz}\usepackage[percent]{overpic}
+\usepackage{tikz}
+
+% Standard packages
+\usepackage[english]{babel}
+%\usepackage[latin1]{inputenc}
+\usepackage{times}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{subfig}
+\usepackage{multimedia}
+%\usepackage{graphicx}
+\usepackage{media9}
+%\usepackage{animate}
+\usepackage{centernot}
+\usepackage{changepage}
+\usepackage{xcolor}
+\usepackage[export]{adjustbox}
+\usepackage[bottom]{footmisc}
+\usepackage{tcolorbox}
+\newtcolorbox{mybox}[3][]
+             {
+               colframe = black!75,
+               colback  = #2!10,
+               coltitle = #2!20!white,
+               title    = {#3},
+               #1,
+             }
+
+\usepackage{enumitem}
+
+\usepackage[absolute,overlay]{textpos}
+  \setlength{\TPHorizModule}{1mm}
+  \setlength{\TPVertModule}{1mm}
+
+\newenvironment<>{varblock}[2][.9\textwidth]{
+  \setlength{\textwidth}{#1}
+  \begin{actionenv}#3
+    \def\insertblocktitle{#2}
+    \par
+    \usebeamertemplate{block begin}}
+  {\par
+    \usebeamertemplate{block end}
+  \end{actionenv}}
+
+%\usepackage{cite}
+%\let\cite={\scriptsize \color{blue} \cite}
+\newcommand{\ccite}[1]{{\color{blue}\scriptsize \cite{#1}}}
+\newcommand{\pcite}[1]{{\color{blue}\scriptsize [#1]}}
+\newcommand{\gcite}[1]{{\color{lightgray}\scriptsize [#1]}}
+\newcommand{\BP}{{\rm BP}}
+\newcommand{\ES}{{\rm ES}}
+
+\definecolor{light-gray}{gray}{0.8}
+
+%\usepackage[colorlinks=true,citecolor=blue,urlcolor=blue]{hyperref}
+%\definecolor{links}{HTML}{2A1B81}
+%\hypersetup{colorlinks,linkcolor=,citecolor=blue}
+
+\def\stBar{\text{ }|\text{ }}
+\def\bfx{ {\bf x} }
+\def\bfc{ {\bf c} }
+\def\bfv{ {\bf v} }
+\def\bfvt{ \tilde{\bf v} }
+\def\bfu{ {\bf u} }
+\def\bfn{ {\bf n} }
+\def\bfs{ {\bf s} }
+\def\bff{ {\bf f} }
+\def\bfq{ {\bf q} }
+
+\usepackage[framemethod=TikZ]{mdframed}
+\mdfdefinestyle{MyFrame}{%
+    linecolor=blue,
+    outerlinewidth=1pt,
+    roundcorner=5pt,
+    innertopmargin=\baselineskip,
+    innerbottommargin=\baselineskip,
+    innerrightmargin=20pt,
+    innerleftmargin=20pt,
+    backgroundcolor=white!50!white}
+
+\usepackage{empheq}
+\newcommand*\widefbox[1]{\fbox{\hspace{0.75em}#1\hspace{0.75em}}}
+
+\setbeamersize{text margin left=20pt,text margin right=20pt}
+% Setup TikZ
+\usepackage{tikz}
+\usetikzlibrary{arrows}
+\tikzstyle{block}=[draw opacity=0.7,line width=1.4cm]
+
+% Title
+\title{
+  {\normalsize AMCS 394E: Contemp. Topics in Computational Science.}
+    \\
+      {\normalsize Computing with the finite element method}}
+\author{\scriptsize David I. Ketcheson and Manuel Quezada de Luna}
+\date{}
+
+% The main document
+\begin{document}
+
+%\maketitle
+\begin{frame}
+  \maketitle
+  \vspace{90pt}  
+  %\begin{textblock}{40}(10,45)
+  %  \begin{figure}
+  %    \includegraphics[scale=0.065]{figures/malpasset_mesh1.png}
+  %  \end{figure}
+  %\end{textblock}
+%
+  %\begin{textblock}{40}(70,50)
+  %  \begin{figure}
+  %    \includegraphics[scale=0.12]{figures/malpasset_soln_n0033_t1200.png}
+  %  \end{figure}
+  %\end{textblock}
+%
+  \begin{textblock}{40}(80,45)
+    \begin{figure}
+    \includegraphics[scale=0.25]{figures/kaust.jpg}
+    \end{figure}
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%
+\begin{frame}{\underline{Overview of the course}}
+  \begin{textblock}{120}(5,15)
+    Our goal is to learn the basics of the finite element (FE) 
+
+    method and its practical implementation. 
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Overview of the course}}
+  \begin{textblock}{120}(5,15)
+    Our goal is to learn the basics of the finite element (FE) 
+
+    method and its practical implementation. 
+  \end{textblock}
+
+  \begin{textblock}{120}(5,32.5)
+    {\color{red} \bf Objectives}
+    \begin{itemize}
+    \item[*]<2-> Learn the basics of the theory behind the FE method.
+    \item[*]<3-> Learn how to implement the FE method from scratch. 
+    \item[*]<4-> Learn to use a FE library to solve real applications.
+    \end{itemize}
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Overview of the course}}
+  \begin{textblock}{120}(5,15)
+    Our goal is to learn the basics of the finite element (FE) 
+
+    method and its practical implementation. 
+  \end{textblock}
+
+  \begin{textblock}{120}(5,32.5)
+    {\color{red} \bf Objectives}
+    \begin{itemize}
+    \item[*] Learn the basics of the theory behind the FE method.
+    \item[*] Learn how to implement the FE method from scratch. 
+    \item[*] Learn to use a FE library to solve real applications.
+    \end{itemize}
+  \end{textblock}
+
+  \begin{textblock}{120}(5,62.5)
+    {\color{red} \bf Prerequisites}    
+    \begin{itemize}
+    \item[*]<2-> Theoretical side: have exposure to PDEs and numerical methods.
+    \item[*]<3-> Computational side: have exposure to Python or Matlab and C++. 
+    \end{itemize}
+  \end{textblock}
+\end{frame}
+%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%
+\begin{frame}{\underline{Overview of the course}: method of evaluation}
+  \begin{textblock}{120}(5,15)
+    {\color{red} \bf Homeworks} (40\%)
+    \begin{itemize}
+      \item[*] Programming assignments with a short report.        
+    \end{itemize}
+    \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Overview of the course}: method of evaluation}
+  \begin{textblock}{120}(5,15)
+    {\color{red} \bf Homeworks} (40\%)
+    \begin{itemize}
+      \item[*] Programming assignments with a short report.        
+    \end{itemize}
+    \end{textblock}
+
+  \begin{textblock}{120}(5,35)
+  {\color{red} \bf Final project} (60\%)
+  \begin{itemize}
+  \item[*]<2-> Objective: 
+    {\scriptsize solve a practical application.}
+  \item[*]<3-> Examples: 
+      {\scriptsize
+      \begin{itemize}
+        \item[-] Solve the Euler equations in multiple dimensions. 
+        \item[-] Test different h-adaptivity criteria during the sol. of the shallow water equations. 
+        \item[-] Solve a problem of a floating cube via ALE.
+        \item[-] Implement and test a numerical scheme from some publication.
+        \item[-] Solve a equation or test a method from your own research. 
+      \end{itemize}
+      }
+    \item[*]<4-> Format: 
+      {\scriptsize report (around 10 pages) with a description of the problem, 
+        equations, numerical methods, details of the implementation and numerical results.}
+  \end{itemize}
+  \end{textblock}
+\end{frame}
+%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%
+\begin{frame}{\underline{Review of PDEs}}
+  \begin{textblock}{120}(5,15)
+    A PDE is an equation involving multiple independent variables 
+    and their derivatives; e.g., consider 
+    \begin{align*}
+      u=u(x,y,t), \qquad F(u,u_t,u_x,u_{xx}, \dots, u_{y}, u_{yy}, \dots,x,y,t)=0.
+    \end{align*}
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Review of PDEs}}
+  \begin{textblock}{120}(5,15)
+    A PDE is an equation involving multiple independent variables 
+    and their derivatives; e.g., consider 
+    \begin{align*}
+      u=u(x,y,t), \qquad F(u,u_t,u_x,u_{xx}, \dots, u_{y}, u_{yy}, \dots,x,y,t)=0.
+    \end{align*}
+  \end{textblock}
+
+  \begin{textblock}{110}(10,46)
+    \begin{center}
+    ``Since Newton, mankind has come to realize that the laws of physics are always 
+    expressed in the language of differential equations.''
+    \end{center}
+  \end{textblock}
+  \begin{textblock}{40}(85,60)
+    Steven Strogatz
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Review of PDEs}}
+  \begin{textblock}{120}(5,15)
+    A PDE is an equation involving multiple independent variables 
+    and their derivatives; e.g., consider 
+    \begin{align*}
+      u=u(x,y,t), \qquad F(u,u_t,u_x,u_{xx}, \dots, u_{y}, u_{yy}, \dots,x,y,t)=0.
+    \end{align*}
+  \end{textblock}
+
+  \begin{textblock}{110}(10,46)
+    \begin{center}
+    ``Since Newton, mankind has come to realize that the laws of physics are always 
+    expressed in the language of differential equations.''
+    \end{center}
+  \end{textblock}
+  \begin{textblock}{40}(85,60)
+    Steven Strogatz
+  \end{textblock}
+
+  \begin{textblock}{120}(5,75)
+    \begin{center}
+      {\scriptsize
+        (0:45-2:04) \url{https://www.youtube.com/watch?v=p_di4Zn4wz4}
+        \\
+        (0:11-1:36, 3:32-5:58) \url{https://www.youtube.com/watch?v=ly4S0oi3Yz8}
+      }
+    \end{center}
+  \end{textblock}
+\end{frame}
+%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%
+\begin{frame}{\underline{Review of PDEs}}
+  \begin{textblock}{120}(5,15)
+    A PDE is an equation involving multiple independent variables 
+    and their derivatives; e.g., consider 
+    \begin{align*}
+      u=u(x,y,t), \qquad F(u,u_t,u_x,u_{xx}, \dots, u_{y}, u_{yy}, \dots, x,y,t)=0.
+    \end{align*}
+  \end{textblock}
+
+  \begin{textblock}{120}(5,42.5)
+    PDEs model the bahavior of functions of multiple variables. 
+    The applications are vast:
+  \end{textblock}
+  
+  \begin{textblock}{120}(5,53.5)
+    {\scriptsize
+    \begin{itemize}
+    \item[*] Weather forecast
+    \item[*] Electromagnetism
+    \item[*] Combustion
+    \item[*] Distribution of stress in a structure
+    \item[*] Finance
+    \item[*] Nuclear physics
+    \item[*] Blood flow 
+    \item[*] Elasticity
+    \end{itemize}
+    }
+  \end{textblock}
+
+  \begin{textblock}{120}(65,53.5)
+    {\scriptsize
+    \begin{itemize}
+    \item[*] Fluid flows
+    \item[*] Multiphase flows
+    \item[*] Floating objects (ships, etc)
+    \item[*] Propagation of a tsunami
+    \item[*] Quantum mechanics
+    \item[*] Spacetime and matter relation 
+    \item[*] Heat distribution and evolution 
+    \item[*] Etcetera
+    \end{itemize}
+    }
+  \end{textblock}
+\end{frame}
+%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ***** END OF SLIDE ***** %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% ********************************* %
+% ********** START SLIDE ********** %
+% ********************************* %
+\begin{frame}{\underline{Review of PDEs}}
+  \begin{textblock}{120}(5,15)
+    {\bf \color{red} Some important concepts:} 
+    \begin{itemize}
+      \item[*]<2-> Order of a PDE. 
+      \item[*]<3-> Linear vs nonlinear PDEs.
+      \item[*]<4-> Constant or variable coefficient PDEs. 
+    \end{itemize}
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Review of PDEs}}
+  \begin{textblock}{120}(5,15)
+    {\bf \color{red} Some important concepts:} 
+    \begin{itemize}
+      \item[*] Order of a PDE. 
+      \item[*] Linear vs nonlinear PDEs.
+      \item[*] Constant or variable coefficient PDEs. 
+    \end{itemize}
+  \end{textblock}
+
+  \begin{textblock}{120}(5,50)
+    {\bf \color{red} Types of PDEs based on:}
+    \begin{itemize}
+    \item[*]<2-> Order: first-order, second-order, etc.
+    \item[*]<3-> Depending on the linearity: linear, quasilinear or nonlinear. 
+    \item[*]<4-> Depending on the force term: homogeneous or non-homogeneous. 
+    \end{itemize}
+  \end{textblock}
+\end{frame}
+%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%
+\begin{frame}{\underline{Review of PDEs}}
+  \begin{textblock}{120}(5,15)
+    {\bf \color{red} Classification of second order PDEs:}
+    \begin{itemize}
+      \item[*]<2-> Hyperbolic
+      \item[*]<3-> Elliptic
+      \item[*]<4-> Parabolic
+    \end{itemize}
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%%%%
+\begin{frame}{\underline{Numerical methods for PDEs}}
+  \begin{textblock}{120}(5,15)
+    {\color{red} \bf Most common numerical methods:}
+    \begin{itemize}
+      \item[*]<2-> Finite differences
+      \item[*]<3-> Finite volumes 
+      \item[*]<4-> Finite elements
+    \end{itemize}
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Numerical methods for PDEs}}
+  \begin{textblock}{120}(5,15)
+    {\color{red} \bf Most common numerical methods:}
+    \begin{itemize}
+      \item[*] Finite differences
+      \item[*] Finite volumes 
+      \item[*] Finite elements
+    \end{itemize}
+  \end{textblock}
+
+  \begin{textblock}{120}(5,50)
+    {\bf \color{red} Method of lines: }
+
+    \vspace{5pt}
+    Popular strategy to solve time dependent PDEs. 
+    The spatial derivatives are discretized directly which leads to 
+    system of (non)linear ordinary differential equations. 
+
+    \vspace{10pt}
+    The system of ODEs is solved at different time intervals. 
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%
+\begin{frame}{\underline{Finite difference method (FDM)}}
+  \begin{textblock}{120}(5,15)
+    The FDM solves for point values at given nodes by 
+    
+    approximating the derivatives through finite differences.
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Finite difference method (FDM)}}
+  \begin{textblock}{120}(5,15)
+    The FDM solves for point values at given nodes by 
+    
+    approximating the derivatives through finite differences.
+  \end{textblock}
+  
+  \begin{textblock}{120}(5,40)
+    {\bf \color{red} Some characteristics are:}
+    \begin{itemize}
+    \item[*]<2-> derivation and error analysis are done via Taylor series
+    \item[*]<3-> easy to implement for structured grids.
+    \item[*]<4-> fast and efficient
+    \item[*]<5-> cumbersome for unstructured grids 
+  \end{itemize}
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%%%
+\begin{frame}{\underline{Finite difference method (FDM)}}
+  \begin{textblock}{120}(5,15)
+    Approximation of first- and second-order derivatives. 
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Finite difference method (FDM)}}
+  \begin{textblock}{120}(5,15)
+    Approximation of first- and second-order derivatives. 
+  \end{textblock}
+
+  \begin{textblock}{120}(5,35)
+    Example. Consider the following advection reaction diffusion equation:
+    \begin{align*}
+      u_t + u_x - \mu u_{xx} = r(x), \qquad \mu>0
+    \end{align*}
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Finite difference method (FDM)}}
+  \begin{textblock}{120}(5,15)
+    Approximation of first- and second-order derivatives. 
+  \end{textblock}
+
+  \begin{textblock}{120}(5,35)
+    Example. Consider the following advection reaction diffusion equation:
+    \begin{align*}
+      u_t + u_x - \mu u_{xx} = r(x), \qquad \mu>0
+    \end{align*}
+
+    \begin{textblock}{120}(5,55)
+      {\color{red} \bf Basic steps:}
+      \begin{itemize}
+      \item[*]<2-> Consider the spatial discretization for a given node $i$. 
+      \item[*]<3-> Consider a matrix form of the semi-discretization. 
+      \item[*]<4-> Discretize in time using e.g. BE, FE, RK methods, etc. 
+      \end{itemize}
+    \end{textblock}    
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%%
+\begin{frame}{\underline{Finite volume method (FVM)}}
+  \begin{textblock}{120}(5,15)
+    The FVM solves for cell averages. 
+
+    The derivatives are 
+    commonly approximated via numerical fluxes. 
+  \end{textblock}
+\end{frame}
+
+
+\begin{frame}{\underline{Finite volume method (FVM)}}
+  \begin{textblock}{120}(5,15)
+    The FVM solves for cell averages. 
+
+    The derivatives are 
+    commonly approximated via numerical fluxes. 
+  \end{textblock}
+  
+  \begin{textblock}{120}(5,40)
+    {\bf \color{red} Some characteristics are:}
+  \begin{itemize}
+    \item[*]<2-> easy to implement for structured grids
+    \item[*]<3-> still relatively fast and efficient
+    \item[*]<4-> high-order approximations are cumbersome for unstructured grids 
+    \item[*]<5-> widely used for hyperbolic equations
+  \end{itemize}
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%
+\begin{frame}{\underline{Finite volume method (FVM)}}
+  \begin{textblock}{120}(5,15)
+    Example. Consider the following advection reaction diffusion equation:
+    \begin{align*}
+      u_t + u_x - \mu u_{xx} = r(x), \qquad \mu>0
+    \end{align*}
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%
+\begin{frame}{\underline{When to use each type of method?}}
+  \begin{textblock}{120}(5,15)
+    {\scriptsize
+      {\bf \color{red} Finite differences:}
+    \begin{itemize}
+    \item[*]<2-> Easiest to implement and the most efficient
+      \item[*]<3-> Difficult to generalize for unstructured grids
+      \item[*]<4-> Easy to consider different type of operators 
+      \item[*]<5-> Good to test different models with simple geometries
+    \end{itemize}
+    }
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{When to use each type of method?}}
+  \begin{textblock}{120}(5,15)
+    {\scriptsize
+      {\bf \color{red} Finite differences:}
+    \begin{itemize}
+      \item[*] Easiest to implement and the most efficient
+      \item[*] Difficult to generalize for unstructured grids
+      \item[*] Easy to consider different type of operators 
+      \item[*] Good to test different models with simple geometries
+    \end{itemize}
+    }
+  \end{textblock}
+
+  \begin{textblock}{120}(5,40)
+    {\scriptsize
+      {\bf \color{red} Finite volumes:}
+      \begin{itemize}
+      \item[*]<2-> FVM is widely used and developed for hyperbolic equations
+      \item[*]<3-> Easy to implement and more efficient than FEM  
+      \item[*]<4-> Difficult to generalize to unstructured grids
+      \item[*]<5-> In some codes it is difficult to consider diffusive terms
+      \end{itemize}
+    }
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{When to use each type of method?}}
+  \begin{textblock}{120}(5,15)
+    {\scriptsize
+      {\bf \color{red} Finite differences:}
+    \begin{itemize}
+      \item[*] Easiest to implement and the most efficient
+      \item[*] Difficult to generalize for unstructured grids
+      \item[*] Easy to consider different type of operators 
+      \item[*] Good to test different models with simple geometries
+    \end{itemize}
+    }
+  \end{textblock}
+
+  \begin{textblock}{120}(5,40)
+    {\scriptsize
+      {\bf \color{red} Finite volumes:}
+      \begin{itemize}
+      \item[*] FVM is widely used and developed for hyperbolic equations
+      \item[*] Easy to implement and more efficient than FEM  
+      \item[*] Difficult to generalize to unstructured grids
+      \item[*] In some codes it is difficult to consider diffusive terms
+      \end{itemize}
+    }
+  \end{textblock}
+
+  \begin{textblock}{120}(5,65)
+    {\scriptsize
+      {\bf \color{red} Finite elements:}
+      \begin{itemize}
+        \item[*]<2-> FEM is the slowest and harder to understand and implement.  
+        \item[*]<3-> Easy to work with unstructured grids. 
+        \item[*]<4-> Easy to consider complex geometries. 
+        \item[*]<5-> Easy to consider different type of operators. 
+      \end{itemize}
+    }
+    \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%
+\begin{frame}{\underline{Scientific libraries for finite elements}}
+  \begin{textblock}{120}(5,15)
+  Finite element libraries versus personalized codes. 
+  
+  {\scriptsize See \url{https://www.math.colostate.edu/~bangerth/videos.676.1.html}}
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Scientific libraries for finite elements}}
+  \begin{textblock}{120}(5,15)
+  Finite element libraries versus personalized codes. 
+  
+  {\scriptsize See \url{https://www.math.colostate.edu/~bangerth/videos.676.1.html}}
+  \end{textblock}
+
+  \begin{textblock}{120}(5,40)
+    {\bf \color{red} Some things to consider:}
+    {\scriptsize
+    \begin{itemize}
+    \item[*]<2-> A personalized solver might be considerably faster.
+    \item[*]<3-> Coding a fast solver from scratch requires considerable experience and knowledge. 
+    \item[*]<4-> Some FE libraries have been largely tested and many bugs have been found and fixed. 
+    \item[*]<5-> Libraries have many (difficult to implement) tools like: 
+      \begin{itemize}
+      \item[-] multigrid methods
+      \item[-] parallelized solvers
+      \item[-] h-adaptivity
+      \item[-] moving meshes
+      \item[-] etc
+      \end{itemize}
+    \item[*]<6-> In general it might take years to code all the tools available in a good FE library. 
+    \end{itemize}
+    }
+  \end{textblock}
+\end{frame}
+
+
+%%%%%%%%%%%%%%%
+\begin{frame}{\underline{Scientific libraries for finite elements}}
+  \begin{textblock}{120}(5,15)
+    {\bf \color{red} Examples of finite element libraries:}
+
+    {\color{white} dummy} deal.II, MFEM, FEniCS Project, FreeFEM, Proteus, etc.
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Scientific libraries for finite elements}}
+  \begin{textblock}{120}(5,15)
+    {\bf \color{red} Examples of finite element libraries: }
+
+    {\color{white} dummy} deal.II, MFEM, FEniCS Project, FreeFEM, Proteus, etc.
+  \end{textblock}
+
+  \begin{textblock}{120}(5,30)
+    {\bf \color{red} Common things between libraries:}
+    {\scriptsize
+    \begin{itemize}
+      \item[*]<2-> Finite element loop: elements, quad points, shape functions, etc. 
+      \item[*]<3-> Finite element transformations. 
+      \item[*]<4-> Maps from local to global entries in the algebraic systems. 
+      \item[*]<5-> Tools to perform quadratures, access data, etc. 
+      \item[*]<5-> etc.
+    \end{itemize}
+    }
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Scientific libraries for finite elements}}
+  \begin{textblock}{120}(5,15)
+    {\color{red}\bf Examples of finite element libraries: }
+
+    {\color{white} dummy} deal.II, MFEM, FEniCS Project, FreeFEM, Proteus, etc.
+  \end{textblock}
+
+  \begin{textblock}{120}(5,30)
+    {\color{red} \bf Common things between libraries:}
+    {\scriptsize
+    \begin{itemize}
+      \item[*] Finite element loop: elements, quad points, shape functions, etc. 
+      \item[*] Finite element transformations. 
+      \item[*] Maps from local to global entries in the algebraic systems. 
+      \item[*] Tools to perform quadratures, access data, etc. 
+      \item[*] etc.
+    \end{itemize}
+    }
+  \end{textblock}
+
+  \begin{textblock}{120}(5,62.5)
+    {\color{red} \bf Main differences:}
+    {\scriptsize
+    \begin{itemize}
+      \item[*]<2-> Extra tools to mesh, solve the linear systems, visualization, etc. 
+      \item[*]<3-> Pre-define functions to assemble common operators. 
+      \item[*]<4-> How exposed are the indices, data structures, conectivity matrix, etc. 
+      \item[*]<5-> Tools to handle matrices in different forms (CSR, standard row-column indices, etc). 
+      \item[*]<5-> etc. 
+    \end{itemize}
+    }
+  \end{textblock}
+\end{frame}
+
+%%%%%%%%%%%%%%%%
+\begin{frame}{\underline{Scientific libraries for finite elements}}
+  \begin{textblock}{120}(5,15)
+    {\color{red} \bf What to look to choose a finite element library:}
+    {\scriptsize
+      \begin{itemize}
+      \item[*]<2-> programming language 
+      \item[*]<3-> software dependencies
+      \item[*]<4-> parallelization
+      \item[*]<5-> standard versus non-standard implementations
+      \item[*]<5-> etc
+      \end{itemize}
+    }
+  \end{textblock}
+\end{frame}
+
+\begin{frame}{\underline{Scientific libraries for finite elements}}
+  \begin{textblock}{120}(5,15)
+    {\color{red} \bf What to look to choose a finite element library:}
+    {\scriptsize
+      \begin{itemize}
+      \item[*] programming language 
+      \item[*] software dependencies
+      \item[*] parallelization
+      \item[*] standard versus non-standard implementations
+      \item[*] etc
+      \end{itemize}
+    }
+  \end{textblock}
+
+  \begin{textblock}{120}(5,50)
+    {\bf \color{red} Other libraries to work with finite elements:}
+  {\scriptsize
+    \begin{itemize}
+    \item[*]<2-> meshing
+    \item[*]<3-> partition of the domain
+    \item[*]<4-> linear algebra
+    \item[*]<5-> visualization
+    \item[*]<5-> etc
+    \end{itemize}
+  }
+  \end{textblock}
+\end{frame}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ***** END OF SLIDE ***** %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+\end{document}
+
+
