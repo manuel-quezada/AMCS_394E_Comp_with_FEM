@@ -1,11 +1,17 @@
+******************************
+***** GFORTRAN AND CMAKE *****
+******************************
+*Before you start, make sure you have a fortran compiler; e.g., gfortran, and cmake. 
+*Make the bin folder from cmake visible through the path; i.e., 
+ export PATH="/Applications/CMake.app/Contents/bin:${PATH}"
+
 *****************
 ***** PETSc *****
 *****************
-*Make sure you have a fortran compiler; e.g., gfortran.
 *Download and unzip petsc; e.g., petsc-3.11.3.
 *To configure PETSc, do:
  +Inside the petsc folder run:
-  ./config/configure.py --with-shared=1 --with-x=0 --with-mpi=1 --download-hypre=1 --with-debugging=0 --download-fblaslapack --download-mumps=1 --download-scalapack=1
+  ./config/configure.py --with-shared=1 --with-x=0 --with-mpi=1 --download-hypre=1 --with-debugging=0 --download-fblaslapack --download-mumps=1 --download-scalapack=1 --download-mpich
  +Problem downloading hypre. I was not able to download it, so I placed one I had in the right petsc folder.
 *To compile PETSc, do:
  make PETSC_DIR=/home/mquezada/soft/deal.ii/petsc/petsc-3.11.3 PETSC_ARCH=arch-linux2-c-opt all
@@ -13,6 +19,9 @@
 *Include the following lines to your .bashrc or .bash_profile:
  export PETSC_DIR=/home/mquezada/soft/deal.ii/petsc/petsc-3.11.3 
  export PETSC_ARCH=arch-linux2-c-opt
+*NOTE: --download-mpich is needed only if the system doesn't have openmpi installed. 
+If that is the case, make sure to put the folder with the compiled objects into the PATH; e.g., 
+ PATH="/Users/lunamq/soft/dealii/petsc-3.11.3/arch-darwin-c-opt/bin:${PATH}"
 
 *****************
 ***** p4est *****
@@ -31,3 +40,11 @@
  cmake -DPETSC_DIR=/home/mquezada/soft/deal.ii/petsc/petsc-3.11.3 -DPETSC_ARCH=arch-linux2-c-opt -DDEAL_II_WITH_PETSC=ON -DP4EST_DIR=/home/mquezada/soft/deal.ii/p4est/p4est-2.2 -DDEAL_II_WITH_P4EST=ON -DDEAL_II_WITH_MPI=ON -DLAPACK_DIR=/usr/lib -DDEAL_II_WITH_LAPACK=ON -DCMAKE_INSTALL_PREFIX=/home/mquezada/soft/deal.ii/installation ../dealii-9.2.0
 *To compile deal.ii, do:
  make --jobs=4 install
+*Add the following line to your .bashrc or .bash_profile file:
+ export DEAL_II_DIR=/home/mquezada/soft/deal.ii/dealii-9.2.0
+
+********************
+***** PARAVIEW *****
+********************
+* Download and install Paraview (https://www.paraview.org/download/). 
+* Note: I am using 5.8.0. 
