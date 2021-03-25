@@ -43,9 +43,8 @@ namespace Projection
   class FunctionToProject : public Function <dim>
   {
   public:
-    FunctionToProject(unsigned int function_type) : Function<dim>() {this->function_type=function_type;}
+    FunctionToProject() : Function<dim>() {}
     virtual double value (const Point<dim> &p, const unsigned int component=0) const;
-    unsigned int function_type;
   };
   
   template <int dim>
@@ -53,7 +52,7 @@ namespace Projection
   {
     double x = p[0];
     double y = p[1];
-    return std::pow(std::sin(2*M_PI*x),4.0)*std::pow(std::sin(2*M_PI*y),4.0);
+	return std::pow(std::sin(2*M_PI*x),4.0)*std::pow(std::sin(2*M_PI*y),4.0);
   }
 
   template <int dim>  
@@ -96,7 +95,6 @@ namespace Projection
     ConvergenceTable convergence_table;	
 	
     // physical parameters
-    unsigned int function_type;
 
     // boundary conditions
   };
@@ -173,7 +171,7 @@ namespace Projection
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
     std::vector<double> shape_value(dofs_per_cell);
 	
-    FunctionToProject<dim> function(function_type);
+    FunctionToProject<dim> function;
 
     // FE loop
     for (const auto &cell : dof_handler.active_cell_iterators())
@@ -280,7 +278,7 @@ namespace Projection
     VectorTools::integrate_difference(mapping,
 				      dof_handler,
 				      locally_relevant_solution,
-				      FunctionToProject<dim>(function_type),
+				      FunctionToProject<dim>(),
 				      difference_per_cell,
 				      QGauss<dim>(fe.degree + 1),
 				      VectorTools::L2_norm);
@@ -314,7 +312,6 @@ namespace Projection
     // ******************************* //
     // ***** physical parameters ***** //
     // ******************************* //
-    function_type = 1;
 
     // ******************************** //
     // ***** numerical parameters ***** //
@@ -385,7 +382,7 @@ int main(int argc, char *argv[])
       
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       
-      unsigned int degree = 2; 
+      unsigned int degree = 1;
       ProjectionProblem<2> projection_problem_2d(degree);
       projection_problem_2d.run();
     }
