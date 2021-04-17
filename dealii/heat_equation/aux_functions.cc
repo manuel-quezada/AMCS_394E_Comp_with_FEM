@@ -90,6 +90,7 @@
           << " MPI rank(s)..." << std::endl;
 
     // ***** OUTPUT CONTROLLER ***** //
+	double output_time = 0.09;
     // Number of output files
     unsigned int nOut = int(final_time/output_time)+1;
     nOut += (nOut-1)*output_time < final_time ? 1 : 0;
