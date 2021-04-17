@@ -125,7 +125,8 @@ namespace Poisson
         
     IndexSet locally_owned_dofs;
     IndexSet locally_relevant_dofs;
-
+	std::map< types::global_dof_index, Point<dim> > support_points;
+	
     AffineConstraints<double> constraints;
 
     PETScWrappers::MPI::SparseMatrix system_matrix, mass_matrix, stiffness_matrix;
@@ -286,6 +287,10 @@ namespace Poisson
 							locally_owned_dofs,
 							dsp,
 							mpi_communicator);
+	
+	DoFTools::map_dofs_to_support_points(mapping,
+										 dof_handler,
+										 support_points);
   }
 
   template <int dim>
@@ -429,12 +434,25 @@ namespace Poisson
 	system_rhs = 0.;
 
 	if (fast_implementation)
-	  {
+	  {		
 		PETScWrappers::MPI::Vector aux(locally_owned_dofs, mpi_communicator);
-		VectorTools::interpolate(mapping,
-								 dof_handler, 
-								 FunctionRHS<dim>(time), 
-								 aux);
+		aux = 0.;
+
+		// this is a hack to quickly compare the performance if I do the interpolation myself
+		if (true)
+		  {
+			FunctionRHS<dim> function(time+dt);
+			for (const auto &it : support_points)
+			  aux[it.first] = function.value(it.second);
+			aux.compress(VectorOperation::insert);
+		  }
+		else
+		  {
+			VectorTools::interpolate(mapping,
+									 dof_handler, 
+									 FunctionRHS<dim>(time+dt), 
+									 aux);
+		  }
 		aux*=dt;
 		aux.add(1.0,un);
 		mass_matrix.vmult(system_rhs,aux);
@@ -616,7 +634,7 @@ namespace Poisson
     for (unsigned int i=0; i<nOut; ++i)
       tnList[i] = i*output_time <= final_time ? i*output_time : final_time;
 
-	fast_implementation=false;
+	fast_implementation=true;
 	unsigned int num_cycles = 4;
 	for (unsigned int cycle=0; cycle<num_cycles; ++cycle)
 	  {
@@ -635,6 +653,10 @@ namespace Poisson
 		
 		// ***** SETUP ***** //
 		setup_system();
+		pcout << "   Number of active cells:       "
+			  << triangulation.n_global_active_cells() << std::endl
+			  << "   Number of degrees of freedom: " << dof_handler.n_dofs()
+			  << std::endl;
 		
 		// ***** INITIAL CONDITIONS ***** //
 		get_initial_condition();
