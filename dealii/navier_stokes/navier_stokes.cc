@@ -55,8 +55,12 @@ namespace Poisson
   {
     double x = p[0];
     double y = p[1];
-	return (2*M_PI*(4*M_PI*std::cos(2*M_PI*time) - std::sin(2*M_PI*time))
-			*std::sin(2*M_PI*x)*std::sin(2*M_PI*y));
+	double mu = 1.0;
+	
+	//return (2*M_PI*(4*M_PI*std::cos(2*M_PI*time) - std::sin(2*M_PI*time))
+	//		*std::sin(2*M_PI*x)*std::sin(2*M_PI*y));
+	return (std::cos(time+y)*std::sin(x) // time derivative
+			+ 2*mu*std::sin(x)*std::sin(time+y)); // viscosity
   }
 
   template <int dim>
@@ -92,7 +96,8 @@ namespace Poisson
   {	
     double x = p[0];
     double y = p[1];
-	return std::cos(2*M_PI*time)*std::sin(2*M_PI*x)*std::sin(2*M_PI*y);
+	//return std::cos(2*M_PI*time)*std::sin(2*M_PI*x)*std::sin(2*M_PI*y);
+	return std::sin(x)*std::sin(y+time);
   }
 
   template <int dim>
@@ -198,12 +203,14 @@ namespace Poisson
 							 ExactSolution_u<dim>(0.0), 
 							 init_condition);
 	un = init_condition;
-    unp1 = init_condition; // to output the init condition
+    unm1 = init_condition; 
+	unp1 = init_condition; // to output the init condition
 	VectorTools::interpolate(mapping,
-							 dof_handler, 
-							 ExactSolution_v<dim>(0.0), 
+							 dof_handler,
+							 ExactSolution_v<dim>(0.0),
 							 init_condition);
 	vn = init_condition;
+	vnm1 = init_condition; 
     vnp1 = init_condition; // to output the init condition	
   }
 
@@ -223,7 +230,7 @@ namespace Poisson
 		un = unp1;
 		// for v
 		vnm1 = vn;
-		vn = vnp1;		
+		vn = vnp1;
 		
 		// check if this is the last step
 		if (final_step==true)
@@ -498,7 +505,7 @@ namespace Poisson
 		  constraints_u.distribute_local_to_global(cell_rhs_u,
 												   local_dof_indices,
 												   system_rhs_u);
-		  constraints_u.distribute_local_to_global(cell_rhs_v,
+		  constraints_v.distribute_local_to_global(cell_rhs_v,
 												   local_dof_indices,
 												   system_rhs_v);		  
 		}
@@ -515,7 +522,7 @@ namespace Poisson
 	solution_u = 0.;
 	solution_v = 0.;
     SolverControl solver_control(dof_handler.n_dofs(), 1e-12);
-	use_iterative_solver=false;
+	use_iterative_solver=true;
     if (use_iterative_solver)
       {
 		PETScWrappers::SolverCG solver(solver_control, mpi_communicator);
@@ -552,25 +559,23 @@ namespace Poisson
   template <int dim>
   void HeatEquation<dim>::output_results(const unsigned int cycle) const
   {
-	PETScWrappers::MPI::Vector locally_relevant_output_vector;
-	locally_relevant_output_vector.reinit(locally_owned_dofs,
-										  locally_relevant_dofs,
-										  mpi_communicator);
+	PETScWrappers::MPI::Vector locally_relevant_unp1, locally_relevant_vnp1;
+	locally_relevant_unp1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+	locally_relevant_vnp1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
 		
     DataOut<dim> data_out;
     data_out.attach_dof_handler(dof_handler);
-
     std::vector<std::string> solution_names(1);
 
 	// for u
     solution_names[0] = "u";
-	locally_relevant_output_vector = unp1;
-    data_out.add_data_vector(locally_relevant_output_vector, solution_names);
+	locally_relevant_unp1 = unp1;
+    data_out.add_data_vector(locally_relevant_unp1, solution_names);
 
 	// for v
 	solution_names[0] = "v";
-	locally_relevant_output_vector = vnp1;
-    data_out.add_data_vector(locally_relevant_output_vector, solution_names);
+	locally_relevant_vnp1 = vnp1;
+    data_out.add_data_vector(locally_relevant_vnp1, solution_names);
 
     data_out.build_patches(mapping,degree,DataOut<dim>::no_curved_cells);
     data_out.write_vtu_with_pvtu_record("./", "solution", cycle, mpi_communicator, 2, 8);
