@@ -36,7 +36,7 @@
 #include <deal.II/fe/mapping_q.h>
 #include <deal.II/grid/grid_tools.h>
 
-namespace Poisson
+namespace NS
 {
   using namespace dealii;
   
@@ -57,10 +57,8 @@ namespace Poisson
     double y = p[1];
 	double mu = 1.0;
 	
-	//return (2*M_PI*(4*M_PI*std::cos(2*M_PI*time) - std::sin(2*M_PI*time))
-	//		*std::sin(2*M_PI*x)*std::sin(2*M_PI*y));
 	return (std::cos(time+y)*std::sin(x) // time derivative
-			+ 2*mu*std::sin(x)*std::sin(time+y)); // viscosity
+			+ 2.0*mu*std::sin(x)*std::sin(time+y)); // viscosity
   }
 
   template <int dim>
@@ -96,7 +94,6 @@ namespace Poisson
   {	
     double x = p[0];
     double y = p[1];
-	//return std::cos(2*M_PI*time)*std::sin(2*M_PI*x)*std::sin(2*M_PI*y);
 	return std::sin(x)*std::sin(y+time);
   }
 
@@ -118,16 +115,17 @@ namespace Poisson
   }
 
   template <int dim>  
-  class HeatEquation
+  class NavierStokes
   
   {
   public:
-    HeatEquation(const unsigned int degree);
+    NavierStokes(const unsigned int degree);
     void run();
     
   private:
 	void get_initial_condition();
-	void interpolate_boundary_values(double time);
+	void set_boundary_values(double time);
+	void get_boundary_ids();
     void setup_system();
 	void evolve_to_time(const double final_time);
     void evolve_one_time_step();	
@@ -152,7 +150,7 @@ namespace Poisson
     IndexSet locally_owned_dofs;
     IndexSet locally_relevant_dofs;
 	
-    AffineConstraints<double> constraints_u, constraints_v;
+    AffineConstraints<double> constraints_U;
 
     PETScWrappers::MPI::SparseMatrix system_matrix_u, system_matrix_v;
 	std::shared_ptr<PETScWrappers::PreconditionBlockJacobi> preconditioner_u, preconditioner_v;
@@ -160,6 +158,10 @@ namespace Poisson
 	PETScWrappers::MPI::Vector       vnm1,vn,vnp1;
     PETScWrappers::MPI::Vector       system_rhs_u, system_rhs_v;
 
+	// for Dirichlet boundary values
+	std::vector<unsigned int> boundary_values_id_u;
+	std::vector<unsigned int> boundary_values_id_v;
+	
     // utilities
     ConditionalOStream pcout;
     ConvergenceTable convergence_table;	
@@ -180,7 +182,7 @@ namespace Poisson
   };
 
   template <int dim>
-  HeatEquation<dim>::HeatEquation(const unsigned int degree)
+  NavierStokes<dim>::NavierStokes(const unsigned int degree)
     : mpi_communicator(MPI_COMM_WORLD)
     , triangulation(mpi_communicator,
                     typename Triangulation<dim>::MeshSmoothing(
@@ -195,7 +197,7 @@ namespace Poisson
   {}
 
   template<int dim>
-  void HeatEquation<dim>::get_initial_condition()
+  void NavierStokes<dim>::get_initial_condition()
   {
     PETScWrappers::MPI::Vector init_condition(locally_owned_dofs, mpi_communicator);
     VectorTools::interpolate(mapping,
@@ -215,7 +217,7 @@ namespace Poisson
   }
 
   template<int dim>
-  void HeatEquation<dim>::evolve_to_time(const double final_time)
+  void NavierStokes<dim>::evolve_to_time(const double final_time)
   {
     bool final_step = false;
     while (time<final_time)
@@ -250,7 +252,7 @@ namespace Poisson
 				final_step=true;
 				// no need to adjust the final time step size since dt is chosen accordingly
 				//dt = final_time - time;
-				assemble_matrix();
+				//assemble_matrix();
 			  }
 		  }
       }
@@ -260,36 +262,70 @@ namespace Poisson
   }
 
   template<int dim>
-  void HeatEquation<dim>::evolve_one_time_step()
+  void NavierStokes<dim>::evolve_one_time_step()
   {
-	interpolate_boundary_values(time+dt);
 	assemble_rhs();
+	set_boundary_values(time+dt);
 	solve();
   }
 
   template<int dim>
-  void HeatEquation<dim>::interpolate_boundary_values(double time)
+  void NavierStokes<dim>::get_boundary_ids()
   {
-	// for u
-	constraints_u.clear();
-	constraints_u.reinit(locally_relevant_dofs);
+	boundary_values_id_u.clear();
+	boundary_values_id_v.clear();
+	
+	std::map<unsigned int, double> map_boundary_values_u;
+	std::map<unsigned int, double> map_boundary_values_v;
+	
 	VectorTools::interpolate_boundary_values(dof_handler,
 											 0,
 											 ExactSolution_u<dim>(time),
-											 constraints_u);
-	constraints_u.close();
-	// for v
-	constraints_v.clear();
-    constraints_v.reinit(locally_relevant_dofs);
+											 map_boundary_values_u);
 	VectorTools::interpolate_boundary_values(dof_handler,
 											 0,
 											 ExactSolution_v<dim>(time),
-											 constraints_v);
-	constraints_v.close();
+											 map_boundary_values_v);
+	std::map<unsigned int,double>::const_iterator iter_u=map_boundary_values_u.begin();
+	std::map<unsigned int,double>::const_iterator iter_v=map_boundary_values_v.begin();	
+	for (; iter_u !=map_boundary_values_u.end(); ++iter_u)
+	  boundary_values_id_u.push_back(iter_u->first);
+	for (; iter_v !=map_boundary_values_v.end(); ++iter_v)
+	  boundary_values_id_v.push_back(iter_v->first);
   }
+
+  template<int dim>
+  void NavierStokes<dim>::set_boundary_values(double time)
+  {
+	std::vector<double> boundary_values_u;
+	std::vector<double> boundary_values_v;
+	std::map<unsigned int, double> map_boundary_values_u;
+	std::map<unsigned int, double> map_boundary_values_v;
 	
+	VectorTools::interpolate_boundary_values(dof_handler,
+											 0,
+											 ExactSolution_u<dim>(time),
+											 map_boundary_values_u);
+	VectorTools::interpolate_boundary_values(dof_handler,
+											 0,
+											 ExactSolution_v<dim>(time),
+											 map_boundary_values_v);
+	std::map<unsigned int,double>::const_iterator iter_u=map_boundary_values_u.begin();
+	std::map<unsigned int,double>::const_iterator iter_v=map_boundary_values_v.begin();	
+	for (; iter_u !=map_boundary_values_u.end(); ++iter_u)
+	  boundary_values_u.push_back(iter_u->second);
+	for (; iter_v !=map_boundary_values_v.end(); ++iter_v)
+	  boundary_values_v.push_back(iter_v->second);
+
+	// set boundary values to RHS
+	system_rhs_u.set(boundary_values_id_u,boundary_values_u);
+	system_rhs_u.compress(VectorOperation::insert);	
+	system_rhs_v.set(boundary_values_id_v,boundary_values_v);
+	system_rhs_v.compress(VectorOperation::insert);
+  }
+
   template <int dim>
-  void HeatEquation<dim>::setup_system()
+  void NavierStokes<dim>::setup_system()
   {
     // LOCALLY OWNED AND LOCALLY RELEVANT DOFs //
     // distributes DoF in parallel
@@ -311,11 +347,16 @@ namespace Poisson
 
     // CONSTRAINTS //
     // The next step is to compute constraints like Dirichlet BCs and hanging nodes
-	interpolate_boundary_values(0.0);
-	
+	constraints_U.clear();
+	constraints_U.reinit(locally_relevant_dofs);
+	constraints_U.close();
+
+	// Get Boundary IDs //
+	get_boundary_ids();
+	  
     // initializing the matrix with sparsity pattern.
     DynamicSparsityPattern dsp_u(locally_relevant_dofs);
-    DoFTools::make_sparsity_pattern(dof_handler, dsp_u, constraints_u, false); // keep_constrained_dofs=false
+    DoFTools::make_sparsity_pattern(dof_handler, dsp_u, constraints_U, false); // keep_constrained_dofs=false
     SparsityTools::distribute_sparsity_pattern(dsp_u,
                                                dof_handler.locally_owned_dofs(),
                                                mpi_communicator,
@@ -325,7 +366,7 @@ namespace Poisson
 						   dsp_u,
 						   mpi_communicator);
 	DynamicSparsityPattern dsp_v(locally_relevant_dofs);
-    DoFTools::make_sparsity_pattern(dof_handler, dsp_v, constraints_v, false); // keep_constrained_dofs=false
+    DoFTools::make_sparsity_pattern(dof_handler, dsp_v, constraints_U, false); // keep_constrained_dofs=false
     SparsityTools::distribute_sparsity_pattern(dsp_v,
                                                dof_handler.locally_owned_dofs(),
                                                mpi_communicator,
@@ -337,7 +378,7 @@ namespace Poisson
   }
 
   template <int dim>
-  void HeatEquation<dim>::assemble_matrix()
+  void NavierStokes<dim>::assemble_matrix()
   {
 	system_matrix_u = 0.;
 	system_matrix_v = 0.;
@@ -400,25 +441,30 @@ namespace Poisson
             }
 		  // assemble from local to global operators
           cell->get_dof_indices(local_dof_indices);
-          constraints_u.distribute_local_to_global(cell_matrix_v,
+          constraints_U.distribute_local_to_global(cell_matrix_u,
 												   local_dof_indices,
 												   system_matrix_u);
-          constraints_v.distribute_local_to_global(cell_matrix_v,
+          constraints_U.distribute_local_to_global(cell_matrix_v,
 												   local_dof_indices,
 												   system_matrix_v);		  
         }
     // Distribute between processors
     system_matrix_u.compress(VectorOperation::add);
+	system_matrix_v.compress(VectorOperation::add);
+
+	// clear rows related to BCs
+	system_matrix_u.clear_rows(boundary_values_id_u,1.0);
+	system_matrix_v.clear_rows(boundary_values_id_v,1.0);
+							  
+	// compute preconditioners
 	preconditioner_u=NULL;
 	preconditioner_u.reset(new PETScWrappers::PreconditionBlockJacobi(system_matrix_u));
-
-	system_matrix_v.compress(VectorOperation::add);
 	preconditioner_v=NULL;
 	preconditioner_v.reset(new PETScWrappers::PreconditionBlockJacobi(system_matrix_v));
   }
 
   template <int dim>
-  void HeatEquation<dim>::assemble_rhs()
+  void NavierStokes<dim>::assemble_rhs()
   {
 	system_rhs_u = 0.;
 	system_rhs_v = 0.;
@@ -502,10 +548,10 @@ namespace Poisson
 		  
 		  // assemble from local to global operators
 		  cell->get_dof_indices(local_dof_indices);
-		  constraints_u.distribute_local_to_global(cell_rhs_u,
+		  constraints_U.distribute_local_to_global(cell_rhs_u,
 												   local_dof_indices,
 												   system_rhs_u);
-		  constraints_v.distribute_local_to_global(cell_rhs_v,
+		  constraints_U.distribute_local_to_global(cell_rhs_v,
 												   local_dof_indices,
 												   system_rhs_v);		  
 		}
@@ -515,7 +561,7 @@ namespace Poisson
   }
 	
   template <int dim>
-  void HeatEquation<dim>::solve()
+  void NavierStokes<dim>::solve()
   {
     PETScWrappers::MPI::Vector solution_u(locally_owned_dofs,mpi_communicator);
 	PETScWrappers::MPI::Vector solution_v(locally_owned_dofs,mpi_communicator);
@@ -549,15 +595,15 @@ namespace Poisson
 	  pcout << "   Solved in " << solver_control.last_step() << " iterations." << std::endl;
 
     // apply constraints
-    constraints_u.distribute(solution_u);
+    constraints_U.distribute(solution_u);
     unp1 = solution_u;
 
-	constraints_v.distribute(solution_v);
+	constraints_U.distribute(solution_v);
     vnp1 = solution_v;
   }
 
   template <int dim>
-  void HeatEquation<dim>::output_results(const unsigned int cycle) const
+  void NavierStokes<dim>::output_results(const unsigned int cycle) const
   {
 	PETScWrappers::MPI::Vector locally_relevant_unp1, locally_relevant_vnp1;
 	locally_relevant_unp1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
@@ -582,7 +628,7 @@ namespace Poisson
   }
   
   template <int dim>
-  void HeatEquation<dim>::get_errors(const unsigned int cycle)
+  void NavierStokes<dim>::get_errors(const unsigned int cycle)
   {
 	// for u
 	PETScWrappers::MPI::Vector locally_relevant_unp1;
@@ -636,7 +682,7 @@ namespace Poisson
   }
   
   template <int dim>
-  void HeatEquation<dim>::run()
+  void NavierStokes<dim>::run()
   {
     pcout << "Running with "
           << "PETSc"
@@ -658,7 +704,7 @@ namespace Poisson
     for (unsigned int i=0; i<nOut; ++i)
       tnList[i] = i*output_time <= final_time ? i*output_time : final_time;
 
-	unsigned int num_cycles = 3;
+	unsigned int num_cycles = 4;
 	for (unsigned int cycle=0; cycle<num_cycles; ++cycle)
 	  {
 		// ***** Initial time ***** //
@@ -696,10 +742,6 @@ namespace Poisson
 		cfl=0.5;
 		//dt = cfl*min_cell_diameter;
 		dt = output_time/int(output_time/(cfl*min_cell_diameter));
-
-		//std::cout << cfl*min_cell_diameter << std::endl;
-		//std::cout << dt << std::endl;
-		//std::cout << output_time/dt << std::endl;
 		
 		// ***** ASSEMBLE MASS MATRIX ***** //
 		assemble_matrix();
@@ -749,13 +791,13 @@ int main(int argc, char *argv[])
   try
     {
       using namespace dealii;
-      using namespace Poisson;
+      using namespace NS;
       
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       
       unsigned int degree = 1;
-      HeatEquation<2> poisson_problem_2d(degree);
-      poisson_problem_2d.run();
+      NavierStokes<2> ns_problem_2d(degree);
+      ns_problem_2d.run();
     }
   catch (std::exception &exc)
     {
