@@ -186,7 +186,7 @@ namespace NS
 	// constraints
     AffineConstraints<double> constraints_U, constraints_phi;
 
-    PETScWrappers::MPI::SparseMatrix system_matrix_u, system_matrix_v, system_matrx_phi;
+    PETScWrappers::MPI::SparseMatrix system_matrix_u, system_matrix_v, system_matrix_phi;
 	std::shared_ptr<PETScWrappers::PreconditionBlockJacobi> preconditioner_u, preconditioner_v, preconditioner_phi;
 	PETScWrappers::MPI::Vector       phinm1,phin,phinp1;
 	PETScWrappers::MPI::Vector       pn,pnp1;
@@ -285,10 +285,12 @@ namespace NS
 		vnm1 = vn;
 		vn = vnp1;
 
-		// for for p and phi
+		// for phi
 		phinm1 = phin;
 		phin = phinp1;
 
+		// for p
+		pn = pnp1;
 		
 		// check if this is the last step
 		if (final_step==true)
@@ -320,10 +322,21 @@ namespace NS
   template<int dim>
   void NavierStokes<dim>::evolve_one_time_step()
   {
+	// for the velocity
 	assemble_matrix();
 	assemble_rhs();
 	set_boundary_values(time+dt);
 	solve();
+
+	// for phi
+	// I assemble the matrix for phi in the run function
+	assemble_rhs_phi();
+	solve_phi();
+
+	// update the pressure
+	// pnp1 = pn + phinp1
+	pnp1 = 0.;
+	pnp1.add(1.0,pn,1.0,phinp1);
   }
 
   template<int dim>
@@ -384,6 +397,7 @@ namespace NS
   template <int dim>
   void NavierStokes<dim>::setup_system()
   {
+	// FOR THE VELOCITY //
     // LOCALLY OWNED AND LOCALLY RELEVANT DOFs //
     // distributes DoF in parallel
     dof_handler.distribute_dofs(fe); 
@@ -432,6 +446,40 @@ namespace NS
 						   locally_owned_dofs,
 						   dsp_v,
 						   mpi_communicator);
+
+	////// FOR PHI //////
+    // LOCALLY OWNED AND LOCALLY RELEVANT DOFs //
+    // distributes DoF in parallel
+    dof_handler_P.distribute_dofs(fe_P); 
+    locally_owned_dofs_P = dof_handler_P.locally_owned_dofs(); 
+    DoFTools::extract_locally_relevant_dofs(dof_handler_P, locally_relevant_dofs_P);
+
+    // RHS AND SOLUTION //
+	// for phi and p
+	phinm1.reinit(locally_owned_dofs_P, mpi_communicator);
+	phin.reinit(locally_owned_dofs_P, mpi_communicator);
+	phinp1.reinit(locally_owned_dofs_P, mpi_communicator);
+    system_rhs_phi.reinit(locally_owned_dofs_P, mpi_communicator);
+	pn.reinit(locally_owned_dofs_P, mpi_communicator);
+	pnp1.reinit(locally_owned_dofs_P, mpi_communicator); 
+
+    // CONSTRAINTS //
+    // The next step is to compute constraints like Dirichlet BCs and hanging nodes
+	constraints_phi.clear();
+	constraints_phi.reinit(locally_relevant_dofs_P);
+	constraints_phi.close();
+
+    // initializing the matrix with sparsity pattern.
+    DynamicSparsityPattern dsp_P(locally_relevant_dofs_P);
+    DoFTools::make_sparsity_pattern(dof_handler_P, dsp_P, constraints_phi, false);
+    SparsityTools::distribute_sparsity_pattern(dsp_P,
+                                               dof_handler_P.locally_owned_dofs(),
+                                               mpi_communicator,
+                                               locally_relevant_dofs_P);
+    system_matrix_phi.reinit(locally_owned_dofs_P,
+							 locally_owned_dofs_P,
+							 dsp_P,
+							 mpi_communicator);
   }
 
   template <int dim>
