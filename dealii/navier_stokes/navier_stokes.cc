@@ -60,6 +60,7 @@ namespace NS
 	return (std::cos(time+y)*std::sin(x) // time derivative
 			+ 2.0*mu*std::sin(x)*std::sin(time+y) // viscosity
 			+ std::cos(x)*std::sin(x) // nonlinearity
+			- std::sin(x)*std::sin(time+y) // pressure
 			); 
   }
 
@@ -79,10 +80,11 @@ namespace NS
     double x = p[0];
     double y = p[1];
 	double mu = 1.0;
-	return (-std::sin(time+y)*std::cos(x) // time derivative
+	return (-std::cos(x)*std::sin(time+y) // time derivative
 			+ 2.0*mu*std::cos(x)*std::cos(time+y) // viscosity
-			+ -0.5*std::sin(2*(time+y))
-			);
+			- 0.5*std::sin(2*(time+y)) // nonlinearity
+			+ std::cos(x)*std::cos(time+y) // pressure
+			); 
   }
 
   template <int dim>
@@ -123,19 +125,19 @@ namespace NS
   class ExactSolution_P : public Function <dim>
   {
   public:
-    ExactSolution_P(double time) : Function<dim>(){this->time=time;}
+    ExactSolution_P(double time) : Function<dim>() {this->time=time;}
     virtual double value (const Point<dim> &p, const unsigned int component=0) const;
 	double time;
   };
   
   template <int dim>
   double ExactSolution_P<dim>::value (const Point<dim> &p, const unsigned int) const
-  {
+  {	
     double x = p[0];
     double y = p[1];
 	return std::cos(x)*std::sin(y+time);
   }
-
+  
   template <int dim>  
   class NavierStokes
   
@@ -151,12 +153,12 @@ namespace NS
     void setup_system();
 	void evolve_to_time(const double final_time);
     void evolve_one_time_step();	
-    void assemble_matrix();
-	void assemble_rhs();
-    void solve();
-	void assemble_matrix_phi();
-	void assemble_rhs_phi();
-    void solve_phi();
+    void assemble_matrix_vel();
+	void assemble_rhs_vel();
+    void assemble_matrix_phi();
+	void assemble_rhs_phi();	
+    void solve_vel();
+	void solve_phi();
     void output_results(const unsigned int cycle) const;
     void get_errors(const unsigned int cycle);	
 	
@@ -166,25 +168,25 @@ namespace NS
     parallel::distributed::Triangulation<dim> triangulation;
 
     // numerics
-    bool use_iterative_solver;
     unsigned int degree;
-
-    MappingQ<dim> mapping;
-
-	// FE spaces for velocity
-	FE_Q<dim>   fe;
+	
+	// spaces and indexing for velocity
+    FE_Q<dim>   fe;
     DoFHandler<dim> dof_handler;
     IndexSet locally_owned_dofs;
     IndexSet locally_relevant_dofs;
 
-	// FE spaces for pressure
+	// spaces and indexing for pressure
 	FE_Q<dim>   fe_P;
     DoFHandler<dim> dof_handler_P;
     IndexSet locally_owned_dofs_P;
     IndexSet locally_relevant_dofs_P;
 
+	// mapping for transformations
+	MappingQ<dim> mapping;
+
 	// constraints
-    AffineConstraints<double> constraints_U, constraints_phi;
+    AffineConstraints<double> constraints_vel, constraints_phi;
 
     PETScWrappers::MPI::SparseMatrix system_matrix_u, system_matrix_v, system_matrix_phi;
 	std::shared_ptr<PETScWrappers::PreconditionBlockJacobi> preconditioner_u, preconditioner_v, preconditioner_phi;
@@ -227,8 +229,8 @@ namespace NS
     , degree(degree)
     , fe(degree)
     , dof_handler(triangulation)
-	, fe_P(degree)
-	, dof_handler_P(triangulation)
+	, fe_P(int(std::max(1.0*(degree-1),1.0)))
+    , dof_handler_P(triangulation)	  
     , mapping(MappingQ<dim>(degree,true)) // high-order mapping in the interior and boundary elements
     , pcout(std::cout,
             (Utilities::MPI::this_mpi_process(mpi_communicator) == 0))
@@ -238,6 +240,8 @@ namespace NS
   void NavierStokes<dim>::get_initial_condition()
   {
     PETScWrappers::MPI::Vector init_condition(locally_owned_dofs, mpi_communicator);
+
+	// for u
     VectorTools::interpolate(mapping,
 							 dof_handler, 
 							 ExactSolution_u<dim>(0.0), 
@@ -245,6 +249,8 @@ namespace NS
 	un = init_condition;
     unm1 = init_condition; 
 	unp1 = init_condition; // to output the init condition
+	
+	// for v
 	VectorTools::interpolate(mapping,
 							 dof_handler,
 							 ExactSolution_v<dim>(0.0),
@@ -252,15 +258,15 @@ namespace NS
 	vn = init_condition;
 	vnm1 = init_condition; 
     vnp1 = init_condition; // to output the init condition
-
+	
 	// for pressure
 	PETScWrappers::MPI::Vector init_condition_P(locally_owned_dofs_P, mpi_communicator);
 	VectorTools::interpolate(mapping,
-							 dof_handler_P,
-							 ExactSolution_P<dim>(0.0),
+							 dof_handler_P, 
+							 ExactSolution_P<dim>(0.0), 
 							 init_condition_P);
 	pn = init_condition_P;
-	pnp1 = init_condition_P;
+    pnp1 = init_condition_P;
 	phinm1 = 0.;
 	phin = 0.;
 	phinp1 = 0.;
@@ -281,7 +287,7 @@ namespace NS
 		unm1 = un;
 		un = unp1;
 		
-		// for v		
+		// for v
 		vnm1 = vn;
 		vn = vnp1;
 
@@ -309,34 +315,39 @@ namespace NS
 			  {
 				final_step=true;
 				// no need to adjust the final time step size since dt is chosen accordingly
-				//dt = final_time - time;
-				//assemble_matrix();
 			  }
 		  }
       }
     // adjust dt. No need to adjust back dt since I don't change it anymore
-    //dt = cfl*min_cell_diameter;
-	//assemble_matrix();
   }
 
   template<int dim>
   void NavierStokes<dim>::evolve_one_time_step()
   {
-	// for the velocity
-	assemble_matrix();
-	assemble_rhs();
+	// momentum equation
+	assemble_matrix_vel();
+	assemble_rhs_vel();
 	set_boundary_values(time+dt);
-	solve();
-
-	// for phi
-	// I assemble the matrix for phi in the run function
+	solve_vel();
+	
+	// pressure increment
+	assemble_matrix_phi();
 	assemble_rhs_phi();
 	solve_phi();
-
-	// update the pressure
-	// pnp1 = pn + phinp1
+	
+	// update pressure
 	pnp1 = 0.;
 	pnp1.add(1.0,pn,1.0,phinp1);
+	
+	// fix the constant in the pressure
+	PETScWrappers::MPI::Vector locally_relevant_pnp1;
+	locally_relevant_pnp1.reinit(locally_owned_dofs_P,locally_relevant_dofs_P,mpi_communicator);
+	locally_relevant_pnp1 = pnp1;
+	double mean_value = VectorTools::compute_mean_value(dof_handler_P,
+														QGauss<dim>(fe.degree+1),
+														locally_relevant_pnp1,
+														0);
+	pnp1.add(-mean_value+std::sin(1)*(std::cos(time)-cos(1+time)));
   }
 
   template<int dim>
@@ -397,7 +408,6 @@ namespace NS
   template <int dim>
   void NavierStokes<dim>::setup_system()
   {
-	// FOR THE VELOCITY //
     // LOCALLY OWNED AND LOCALLY RELEVANT DOFs //
     // distributes DoF in parallel
     dof_handler.distribute_dofs(fe); 
@@ -418,16 +428,16 @@ namespace NS
 
     // CONSTRAINTS //
     // The next step is to compute constraints like Dirichlet BCs and hanging nodes
-	constraints_U.clear();
-	constraints_U.reinit(locally_relevant_dofs);
-	constraints_U.close();
+	constraints_vel.clear();
+	constraints_vel.reinit(locally_relevant_dofs);
+	constraints_vel.close();
 
 	// Get Boundary IDs //
 	get_boundary_ids();
 	  
     // initializing the matrix with sparsity pattern.
     DynamicSparsityPattern dsp_u(locally_relevant_dofs);
-    DoFTools::make_sparsity_pattern(dof_handler, dsp_u, constraints_U, false); // keep_constrained_dofs=false
+    DoFTools::make_sparsity_pattern(dof_handler, dsp_u, constraints_vel, false); // keep_constrained_dofs=false
     SparsityTools::distribute_sparsity_pattern(dsp_u,
                                                dof_handler.locally_owned_dofs(),
                                                mpi_communicator,
@@ -437,7 +447,7 @@ namespace NS
 						   dsp_u,
 						   mpi_communicator);
 	DynamicSparsityPattern dsp_v(locally_relevant_dofs);
-    DoFTools::make_sparsity_pattern(dof_handler, dsp_v, constraints_U, false); // keep_constrained_dofs=false
+    DoFTools::make_sparsity_pattern(dof_handler, dsp_v, constraints_vel, false); // keep_constrained_dofs=false
     SparsityTools::distribute_sparsity_pattern(dsp_v,
                                                dof_handler.locally_owned_dofs(),
                                                mpi_communicator,
@@ -447,21 +457,23 @@ namespace NS
 						   dsp_v,
 						   mpi_communicator);
 
-	////// FOR PHI //////
-    // LOCALLY OWNED AND LOCALLY RELEVANT DOFs //
+	// ************************ //
+	// ***** For Pressure ***** //
+	// ************************ //
+	// LOCALLY OWNED AND LOCALLY RELEVANT DOFs //
     // distributes DoF in parallel
     dof_handler_P.distribute_dofs(fe_P); 
     locally_owned_dofs_P = dof_handler_P.locally_owned_dofs(); 
     DoFTools::extract_locally_relevant_dofs(dof_handler_P, locally_relevant_dofs_P);
 
     // RHS AND SOLUTION //
-	// for phi and p
+	// for u
 	phinm1.reinit(locally_owned_dofs_P, mpi_communicator);
 	phin.reinit(locally_owned_dofs_P, mpi_communicator);
 	phinp1.reinit(locally_owned_dofs_P, mpi_communicator);
-    system_rhs_phi.reinit(locally_owned_dofs_P, mpi_communicator);
 	pn.reinit(locally_owned_dofs_P, mpi_communicator);
-	pnp1.reinit(locally_owned_dofs_P, mpi_communicator); 
+	pnp1.reinit(locally_owned_dofs_P, mpi_communicator); 	
+    system_rhs_phi.reinit(locally_owned_dofs_P, mpi_communicator); // the RHS only needs info locally owned
 
     // CONSTRAINTS //
     // The next step is to compute constraints like Dirichlet BCs and hanging nodes
@@ -483,24 +495,10 @@ namespace NS
   }
 
   template <int dim>
-  void NavierStokes<dim>::assemble_matrix()
+  void NavierStokes<dim>::assemble_matrix_vel()
   {
 	system_matrix_u = 0.;
 	system_matrix_v = 0.;
-
-	// for u
-	PETScWrappers::MPI::Vector locally_relevant_un, locally_relevant_unm1;
-	locally_relevant_un.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-	locally_relevant_unm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-	locally_relevant_un = un;
-	locally_relevant_unm1 = unm1;
-
-	// for v
-	PETScWrappers::MPI::Vector locally_relevant_vn, locally_relevant_vnm1;
-	locally_relevant_vn.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-	locally_relevant_vnm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-	locally_relevant_vn = vn;
-	locally_relevant_vnm1 = vnm1;
 	
     // create a quadrature rule
     // Recall that 2*Nq-1>=degree => Nq>=(degree+1)/2
@@ -532,9 +530,23 @@ namespace NS
         {
           cell_matrix_u = 0.;
 		  cell_matrix_v = 0.;
+
+		  // for u
+		  PETScWrappers::MPI::Vector locally_relevant_un, locally_relevant_unm1;
+		  locally_relevant_un.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+		  locally_relevant_unm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+		  locally_relevant_un = un;
+		  locally_relevant_unm1 = unm1;
 		  
+		  // for v
+		  PETScWrappers::MPI::Vector locally_relevant_vn, locally_relevant_vnm1;
+		  locally_relevant_vn.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+		  locally_relevant_vnm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+		  locally_relevant_vn = vn;
+		  locally_relevant_vnm1 = vnm1;
+	
 		  // get shape functions, their derivatives, etc at quad points
-		  fe_values.reinit(cell);
+		  fe_values.reinit(cell); 
 		  fe_values.get_function_values(locally_relevant_un,uhn_at_xq);
 		  fe_values.get_function_values(locally_relevant_unm1,uhnm1_at_xq);
 		  fe_values.get_function_values(locally_relevant_vn,vhn_at_xq);
@@ -550,8 +562,8 @@ namespace NS
 				  shape_grad[i]  = fe_values.shape_grad(i,q_point);
 				}
 
-			  double uhStar = 2*uhn_at_xq[q_point]-uhnm1_at_xq[q_point];
-			  double vhStar = 2*vhn_at_xq[q_point]-vhnm1_at_xq[q_point];
+			  double uhStar = 2*uhn_at_xq[q_point] - uhnm1_at_xq[q_point];
+			  double vhStar = 2*vhn_at_xq[q_point] - vhnm1_at_xq[q_point];
 			  
 			  // loop on i-DoFs
               for (unsigned int i = 0; i < dofs_per_cell; ++i)
@@ -559,31 +571,27 @@ namespace NS
 				  // loop on j-DoFs
                   for (unsigned int j = 0; j < dofs_per_cell; ++j)
 					{
-					  cell_matrix_u(i,j) += (shape_value[i] * shape_value[j] 
-											 +
-											 2*dt/3.0*(uhStar*shape_grad[j][0]
-													   +vhStar*shape_grad[j][1])*shape_value[i]
-											 +
-											 2*dt*coeff_mu/3.0/coeff_rho * (shape_grad[i] * shape_grad[j])
+					  cell_matrix_u(i,j) += (shape_value[i] * shape_value[j] // mass matrx
+											 + 2*dt/3.0 * (uhStar * shape_grad[j][0] + // nonlinearity
+														   vhStar * shape_grad[j][1]) * shape_value[i]
+											 + 2*dt*coeff_mu/3.0/coeff_rho * (shape_grad[i] * shape_grad[j]) // stiffness matriix
 											 ) * detJxdV;
-					  cell_matrix_v(i,j) += (shape_value[i] * shape_value[j] 
-											 +
-											 2*dt/3.0*(uhStar*shape_grad[j][0]
-													   +vhStar*shape_grad[j][1])*shape_value[i]
-											 +
-											 2*dt*coeff_mu/3.0/coeff_rho * (shape_grad[i] * shape_grad[j])
+					  cell_matrix_v(i,j) += (shape_value[i] * shape_value[j] // mass matrix
+											 + 2*dt/3.0 * (uhStar * shape_grad[j][0] + // nonlinearity
+														   vhStar * shape_grad[j][1]) * shape_value[i]
+											 + 2*dt*coeff_mu/3.0/coeff_rho * (shape_grad[i] * shape_grad[j]) // stiffness matrix
 											 ) * detJxdV;
 					}
                 }
             }
 		  // assemble from local to global operators
           cell->get_dof_indices(local_dof_indices);
-          constraints_U.distribute_local_to_global(cell_matrix_u,
-												   local_dof_indices,
-												   system_matrix_u);
-          constraints_U.distribute_local_to_global(cell_matrix_v,
-												   local_dof_indices,
-												   system_matrix_v);		  
+          constraints_vel.distribute_local_to_global(cell_matrix_u,
+													 local_dof_indices,
+													 system_matrix_u);
+          constraints_vel.distribute_local_to_global(cell_matrix_v,
+													 local_dof_indices,
+													 system_matrix_v);		  
         }
     // Distribute between processors
     system_matrix_u.compress(VectorOperation::add);
@@ -599,9 +607,9 @@ namespace NS
 	preconditioner_v=NULL;
 	preconditioner_v.reset(new PETScWrappers::PreconditionBlockJacobi(system_matrix_v));
   }
-
+  
   template <int dim>
-  void NavierStokes<dim>::assemble_rhs()
+  void NavierStokes<dim>::assemble_rhs_vel()
   {
 	system_rhs_u = 0.;
 	system_rhs_v = 0.;
@@ -619,19 +627,32 @@ namespace NS
 	locally_relevant_vnm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
 	locally_relevant_vn = vn;
 	locally_relevant_vnm1 = vnm1;
+
+	// for phi and p
+	PETScWrappers::MPI::Vector locally_relevant_pn, locally_relevant_phin, locally_relevant_phinm1;
+	locally_relevant_pn.reinit(locally_owned_dofs_P,locally_relevant_dofs_P,mpi_communicator);
+	locally_relevant_phin.reinit(locally_owned_dofs_P,locally_relevant_dofs_P,mpi_communicator);
+	locally_relevant_phinm1.reinit(locally_owned_dofs_P,locally_relevant_dofs_P,mpi_communicator);
+	locally_relevant_pn = pn;
+	locally_relevant_phin = phin;
+	locally_relevant_phinm1 = phinm1;
 	
 	// create a quadrature rule
 	// Recall that 2*Nq-1>=degree => Nq>=(degree+1)/2
 	const QGauss<dim> quadrature_formula(fe.degree + 1);
 	
 	// computation of quantities related to FEs
+	FEValues<dim> fe_values_P(mapping,
+							  fe_P,
+							  quadrature_formula,
+							  update_gradients);
 	FEValues<dim> fe_values(mapping,
 							fe,
 							quadrature_formula,
 							update_values |
 							update_gradients |
 							update_quadrature_points |
-							update_JxW_values);	
+							update_JxW_values);		
 	const unsigned int dofs_per_cell = fe.dofs_per_cell;
 	const unsigned int n_q_points    = quadrature_formula.size();
 	
@@ -642,6 +663,9 @@ namespace NS
 	std::vector<double> uhnm1_at_xq(n_q_points);
 	std::vector<double> vhn_at_xq(n_q_points);
 	std::vector<double> vhnm1_at_xq(n_q_points);
+	std::vector<Tensor<1,dim> > grad_phn_at_xq(n_q_points);
+	std::vector<Tensor<1,dim> > grad_phihn_at_xq(n_q_points);
+	std::vector<Tensor<1,dim> > grad_phihnm1_at_xq(n_q_points);
 	
 	FunctionRHS_u<dim> function_u;
 	function_u.set_time(time+dt);
@@ -649,18 +673,26 @@ namespace NS
 	function_v.set_time(time+dt);
 	
 	// FE loop
-	for (const auto &cell : dof_handler.active_cell_iterators())
-	  if (cell->is_locally_owned())
+	typename DoFHandler<dim>::active_cell_iterator cell_P=dof_handler_P.begin_active(); 
+	typename DoFHandler<dim>::active_cell_iterator
+	  cell_vel=dof_handler.begin_active(), endc_vel=dof_handler.end();
+	
+	for (; cell_vel!=endc_vel; ++cell_vel, ++ cell_P)
+	  if (cell_vel->is_locally_owned())
 		{
 		  cell_rhs_u = 0.;
 		  cell_rhs_v = 0.;
 		  
 		  // get shape functions, their derivatives, etc at quad points
-		  fe_values.reinit(cell);
+		  fe_values.reinit(cell_vel);
+		  fe_values_P.reinit(cell_P);
 		  fe_values.get_function_values(locally_relevant_un,uhn_at_xq);
 		  fe_values.get_function_values(locally_relevant_unm1,uhnm1_at_xq);
 		  fe_values.get_function_values(locally_relevant_vn,vhn_at_xq);
 		  fe_values.get_function_values(locally_relevant_vnm1,vhnm1_at_xq);
+		  fe_values_P.get_function_gradients(locally_relevant_pn, grad_phn_at_xq);
+		  fe_values_P.get_function_gradients(locally_relevant_phin, grad_phihn_at_xq);
+		  fe_values_P.get_function_gradients(locally_relevant_phinm1, grad_phihnm1_at_xq);
 		  
 		  for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
 			{
@@ -668,12 +700,20 @@ namespace NS
 			  const double detJxdV = fe_values.JxW(q_point);
 			  
 			  const double rhs_value_u
-				= 4.0/3.0 * uhn_at_xq[q_point] - 1.0/3.0 * uhnm1_at_xq[q_point] +
-				2*dt/3.0/coeff_rho * function_u.value(fe_values.quadrature_point(q_point));
-
+				= ( 4.0/3.0 * uhn_at_xq[q_point] - 1.0/3.0 * uhnm1_at_xq[q_point]   // time derivative
+					- 2*dt/3.0/coeff_rho * (grad_phn_at_xq[q_point][0] // pressure
+											+ 4.0/3 * grad_phihn_at_xq[q_point][0]
+											- 1.0/3 * grad_phihnm1_at_xq[q_point][0]) 
+					+ 2*dt/3.0/coeff_rho * function_u.value(fe_values.quadrature_point(q_point))  // force
+					);
+			  
 			  const double rhs_value_v
-				= 4.0/3.0 * vhn_at_xq[q_point] - 1.0/3.0 * vhnm1_at_xq[q_point] +
-				2*dt/3.0/coeff_rho * function_v.value(fe_values.quadrature_point(q_point));
+				= (4.0/3.0 * vhn_at_xq[q_point] - 1.0/3.0 * vhnm1_at_xq[q_point]  // time derivative
+				   - 2*dt/3.0/coeff_rho * (grad_phn_at_xq[q_point][1] // pressure
+										   + 4.0/3 * grad_phihn_at_xq[q_point][1]
+										   - 1.0/3 * grad_phihnm1_at_xq[q_point][1]) 
+				   + 2*dt/3.0/coeff_rho * function_v.value(fe_values.quadrature_point(q_point))  // force
+				   );
 			  
 			  // loop on i-DoFs
 			  for (unsigned int i = 0; i < dofs_per_cell; ++i)
@@ -684,59 +724,207 @@ namespace NS
 			}
 		  
 		  // assemble from local to global operators
-		  cell->get_dof_indices(local_dof_indices);
-		  constraints_U.distribute_local_to_global(cell_rhs_u,
-												   local_dof_indices,
-												   system_rhs_u);
-		  constraints_U.distribute_local_to_global(cell_rhs_v,
-												   local_dof_indices,
-												   system_rhs_v);		  
+		  cell_vel->get_dof_indices(local_dof_indices);
+		  constraints_vel.distribute_local_to_global(cell_rhs_u,
+													 local_dof_indices,
+													 system_rhs_u);
+		  constraints_vel.distribute_local_to_global(cell_rhs_v,
+													 local_dof_indices,
+													 system_rhs_v);		  
 		}
 	// Distribute between processors
 	system_rhs_u.compress(VectorOperation::add);
 	system_rhs_v.compress(VectorOperation::add);
   }
+
+  template <int dim>
+  void NavierStokes<dim>::assemble_matrix_phi()
+  {
+	system_matrix_phi = 0.;
+    // create a quadrature rule
+    // Recall that 2*Nq-1>=degree => Nq>=(degree+1)/2
+    const QGauss<dim> quadrature_formula(fe_P.degree + 1);
+
+    // computation of quantities related to FEs
+    FEValues<dim> fe_values(mapping,
+							fe_P,
+							quadrature_formula,
+							update_gradients |
+							update_JxW_values);	
+    const unsigned int dofs_per_cell = fe_P.dofs_per_cell;
+    const unsigned int n_q_points    = quadrature_formula.size();
+	
+    FullMatrix<double> cell_matrix_phi(dofs_per_cell, dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+	std::vector<Tensor<1,dim> > shape_grad(dofs_per_cell);
+	
+    // FE loop
+    for (const auto &cell : dof_handler_P.active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          cell_matrix_phi = 0.;
+
+		  // get shape functions, their derivatives, etc at quad points
+		  fe_values.reinit(cell); 
+		  
+		  for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+            {
+			  // compute detJxW, phi, grad(phi), etc at quad points
+			  const double detJxdV = fe_values.JxW(q_point);
+			  for (unsigned int i = 0; i < dofs_per_cell; ++i)
+				shape_grad[i]  = fe_values.shape_grad(i,q_point);
+
+			  // loop on i- and j-DoFs
+              for (unsigned int i = 0; i < dofs_per_cell; ++i)
+				for (unsigned int j = 0; j < dofs_per_cell; ++j)
+				  cell_matrix_phi(i,j) += (shape_grad[i] * shape_grad[j]) * detJxdV;
+            }
+		  // assemble from local to global operators
+          cell->get_dof_indices(local_dof_indices);
+          constraints_phi.distribute_local_to_global(cell_matrix_phi,
+													 local_dof_indices,
+													 system_matrix_phi);
+        }
+    // Distribute between processors
+    system_matrix_phi.compress(VectorOperation::add);
+
+	// compute preconditioners
+	preconditioner_phi=NULL;
+	preconditioner_phi.reset(new PETScWrappers::PreconditionBlockJacobi(system_matrix_phi));
+
+  }
+  template <int dim>
+  void NavierStokes<dim>::assemble_rhs_phi()
+  {
+	system_rhs_phi = 0.;
+
+	// for u
+	PETScWrappers::MPI::Vector locally_relevant_unp1;
+	locally_relevant_unp1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+	locally_relevant_unp1 = unp1;
+
+	// for v
+	PETScWrappers::MPI::Vector locally_relevant_vnp1;
+	locally_relevant_vnp1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+	locally_relevant_vnp1 = vnp1;
+	
+	// create a quadrature rule
+	// Recall that 2*Nq-1>=degree => Nq>=(degree+1)/2
+	const QGauss<dim> quadrature_formula(fe.degree + 1); // use a quadrature based on space for vel
+	
+	// computation of quantities related to FEs
+	FEValues<dim> fe_values(mapping,
+							fe_P,
+							quadrature_formula,
+							update_values |
+							update_JxW_values);
+	FEValues<dim> fe_values_vel(mapping,
+								fe,
+								quadrature_formula,
+								update_gradients);
+	const unsigned int dofs_per_cell = fe_P.dofs_per_cell;
+	const unsigned int n_q_points    = quadrature_formula.size();
+	
+	Vector<double>     cell_rhs_phi(dofs_per_cell);
+	std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+	std::vector<Tensor<1,dim> > grad_uhnp1_at_xq(n_q_points);
+	std::vector<Tensor<1,dim> > grad_vhnp1_at_xq(n_q_points);
+	
+	// FE loop
+	typename DoFHandler<dim>::active_cell_iterator
+	  cell_P=dof_handler_P.begin_active(), endc_P=dof_handler_P.end();
+	typename DoFHandler<dim>::active_cell_iterator cell_vel=dof_handler.begin_active();
+	
+	for (; cell_P!=endc_P; ++cell_P, ++cell_vel)
+	  if (cell_P->is_locally_owned())
+		{
+		  cell_rhs_phi = 0.;
+		  
+		  // get shape functions, their derivatives, etc at quad points
+		  fe_values.reinit(cell_P);
+		  fe_values_vel.reinit(cell_vel);
+		  fe_values_vel.get_function_gradients(locally_relevant_unp1, grad_uhnp1_at_xq);
+		  fe_values_vel.get_function_gradients(locally_relevant_vnp1, grad_vhnp1_at_xq);
+		  
+		  for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+			{
+			  // compute detJxW, phi, grad(phi), etc at quad points
+			  const double detJxdV = fe_values.JxW(q_point);
+			  const double rhs_value_phi = -3.0*coeff_rho/2.0/dt * (grad_uhnp1_at_xq[q_point][0] +
+																	grad_vhnp1_at_xq[q_point][1]);
+			  
+			  // loop on i-DoFs
+			  for (unsigned int i = 0; i < dofs_per_cell; ++i)
+				cell_rhs_phi(i) += rhs_value_phi * fe_values.shape_value(i,q_point) * detJxdV;
+			}
+		  
+		  // assemble from local to global operators
+		  cell_P->get_dof_indices(local_dof_indices);
+		  constraints_phi.distribute_local_to_global(cell_rhs_phi,
+													 local_dof_indices,
+													 system_rhs_phi);
+		}
+	// Distribute between processors
+	system_rhs_phi.compress(VectorOperation::add);
+  }  
 	
   template <int dim>
-  void NavierStokes<dim>::solve()
+  void NavierStokes<dim>::solve_vel()
   {
     PETScWrappers::MPI::Vector solution_u(locally_owned_dofs,mpi_communicator);
 	PETScWrappers::MPI::Vector solution_v(locally_owned_dofs,mpi_communicator);
 	solution_u = 0.;
 	solution_v = 0.;
     SolverControl solver_control(dof_handler.n_dofs(), 1e-12);
-	use_iterative_solver=true;
-    if (use_iterative_solver)
-      {
-		PETScWrappers::SolverCG solver(solver_control, mpi_communicator);
-		solver.solve(system_matrix_u,
-					 solution_u,
-					 system_rhs_u,
-					 *preconditioner_u);
-		solver.solve(system_matrix_v,
-					 solution_v,
-					 system_rhs_v,
-					 *preconditioner_v);
-      }
-    else
-      {
-		PETScWrappers::SparseDirectMUMPS solver(solver_control,mpi_communicator);
-		solver.solve(system_matrix_u,
-					 solution_u,
-					 system_rhs_u);
-		solver.solve(system_matrix_v,
-					 solution_v,
-					 system_rhs_v);		
-      }
+	PETScWrappers::SolverBicgstab solver(solver_control, mpi_communicator);
+	solver.solve(system_matrix_u,
+				 solution_u,
+				 system_rhs_u,
+				 *preconditioner_u);
+	solver.solve(system_matrix_v,
+				 solution_v,
+				 system_rhs_v,
+				 *preconditioner_v);
+	//PETScWrappers::SparseDirectMUMPS solver(solver_control, mpi_communicator);
+	//solver.solve(system_matrix_u,
+	//			 solution_u,
+	//			 system_rhs_u);
+	//solver.solve(system_matrix_v,
+	//			 solution_v,
+	//			 system_rhs_v);
 	if (verbosity==1)
 	  pcout << "   Solved in " << solver_control.last_step() << " iterations." << std::endl;
 
     // apply constraints
-    constraints_U.distribute(solution_u);
+    constraints_vel.distribute(solution_u);
     unp1 = solution_u;
 
-	constraints_U.distribute(solution_v);
+	constraints_vel.distribute(solution_v);
     vnp1 = solution_v;
+  }
+
+  template <int dim>
+  void NavierStokes<dim>::solve_phi()
+  {
+    PETScWrappers::MPI::Vector solution_phi(locally_owned_dofs_P,mpi_communicator);
+	solution_phi = 0.;
+    SolverControl solver_control(dof_handler.n_dofs(), 1e-12);
+	PETScWrappers::SolverCG solver(solver_control, mpi_communicator);
+	solver.solve(system_matrix_phi,
+				 solution_phi,
+				 system_rhs_phi,
+				 *preconditioner_phi);
+	//PETScWrappers::SparseDirectMUMPS solver(solver_control, mpi_communicator);
+	//solver.solve(system_matrix_phi,
+	//			 solution_phi,
+	//			 system_rhs_phi);
+	
+	if (verbosity==1)
+	  pcout << "   Solved in " << solver_control.last_step() << " iterations." << std::endl;
+
+    // apply constraints
+    constraints_phi.distribute(solution_phi);
+    phinp1 = solution_phi;
   }
 
   template <int dim>
@@ -760,8 +948,22 @@ namespace NS
 	locally_relevant_vnp1 = vnp1;
     data_out.add_data_vector(locally_relevant_vnp1, solution_names);
 
-    data_out.build_patches(mapping,degree,DataOut<dim>::no_curved_cells);
-    data_out.write_vtu_with_pvtu_record("./", "solution", cycle, mpi_communicator, 2, 8);
+    data_out.build_patches(mapping,fe.degree,DataOut<dim>::no_curved_cells);
+    data_out.write_vtu_with_pvtu_record("./", "solution_vel", cycle, mpi_communicator, 2, 8);
+
+	// ***** For pressure ***** //
+	PETScWrappers::MPI::Vector locally_relevant_pnp1;
+	locally_relevant_pnp1.reinit(locally_owned_dofs_P,locally_relevant_dofs_P,mpi_communicator);
+		
+    DataOut<dim> data_out_P;
+    data_out_P.attach_dof_handler(dof_handler_P);
+
+    solution_names[0] = "P";
+	locally_relevant_pnp1 = pnp1;
+    data_out_P.add_data_vector(locally_relevant_pnp1, solution_names);
+
+    data_out_P.build_patches(mapping,fe_P.degree,DataOut<dim>::no_curved_cells);
+    data_out_P.write_vtu_with_pvtu_record("./", "solution_P", cycle, mpi_communicator, 2, 8);
   }
   
   template <int dim>
@@ -799,6 +1001,22 @@ namespace NS
       VectorTools::compute_global_error(triangulation,
 										difference_per_cell_v,
 										VectorTools::L2_norm);
+	// for P
+	PETScWrappers::MPI::Vector locally_relevant_pnp1;
+    locally_relevant_pnp1.reinit(locally_owned_dofs_P,locally_relevant_dofs_P,mpi_communicator);
+	locally_relevant_pnp1 = pnp1;
+    Vector<double> difference_per_cell_P(triangulation.n_active_cells());
+    VectorTools::integrate_difference(mapping,
+									  dof_handler_P,
+									  locally_relevant_pnp1,
+									  ExactSolution_P<dim>(time),
+									  difference_per_cell_P,
+									  QGauss<dim>(fe_P.degree + 1),
+									  VectorTools::L2_norm);
+    const double L2_error_P =
+      VectorTools::compute_global_error(triangulation,
+										difference_per_cell_P,
+										VectorTools::L2_norm);
 	
     pcout << "   L2 error for cycle "
 		  << cycle
@@ -806,6 +1024,8 @@ namespace NS
 		  << L2_error_u
 		  << ", "
 		  << L2_error_v
+		  << ", "
+		  << L2_error_P
 		  << std::endl;
 
     // save error into convergence_table
@@ -816,6 +1036,7 @@ namespace NS
     convergence_table.add_value("n_dofs", n_dofs);
     convergence_table.add_value("E2_u", L2_error_u);
 	convergence_table.add_value("E2_v", L2_error_v);
+	convergence_table.add_value("E2_P", L2_error_P);
   }
   
   template <int dim>
@@ -857,7 +1078,6 @@ namespace NS
 		else
 		  {
 			triangulation.refine_global(1);
-			//dt = output_time/int(output_time/(cfl*min_cell_diameter));
 		  }
 		
 		// ***** SETUP ***** //
@@ -876,12 +1096,12 @@ namespace NS
 		
 		// more numerical parameters
 		min_cell_diameter = GridTools::minimal_cell_diameter(triangulation);
-		cfl=0.5;
-		//dt = cfl*min_cell_diameter;
+		cfl=0.1;
 		dt = output_time/int(output_time/(cfl*min_cell_diameter));
 		
-		// ***** ASSEMBLE MASS MATRIX ***** //
-		assemble_matrix();
+		// ***** ASSEMBLE MATRICES ***** //
+		// the matrix for the momentum equation is assembled within evolve_one_step
+		assemble_matrix_phi();
 		
 		// ***** TIME LOOP ***** //
 		// loop over tnList
@@ -906,7 +1126,9 @@ namespace NS
 			convergence_table.set_precision("E2_u", 2);
 			convergence_table.set_scientific("E2_u",true);
 			convergence_table.set_precision("E2_v", 2);
-			convergence_table.set_scientific("E2_v",true);			
+			convergence_table.set_scientific("E2_v",true);
+			convergence_table.set_precision("E2_P", 2);
+			convergence_table.set_scientific("E2_P",true);			
 			convergence_table.set_tex_format("cells","r");
 			convergence_table.set_tex_format("n_dofs","r");
 		  }		
@@ -915,6 +1137,7 @@ namespace NS
 	// ***** GET CONVERGENCE RATES AND PRINT TABLE ***** //
     convergence_table.evaluate_convergence_rates("E2_u", "cells", ConvergenceTable::reduction_rate_log2, dim);
 	convergence_table.evaluate_convergence_rates("E2_v", "cells", ConvergenceTable::reduction_rate_log2, dim);
+	convergence_table.evaluate_convergence_rates("E2_P", "cells", ConvergenceTable::reduction_rate_log2, dim);
     if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
       {
 		std::cout << std::endl;
@@ -932,7 +1155,7 @@ int main(int argc, char *argv[])
       
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       
-      unsigned int degree = 1;
+      unsigned int degree = 2;
       NavierStokes<2> ns_problem_2d(degree);
       ns_problem_2d.run();
     }
