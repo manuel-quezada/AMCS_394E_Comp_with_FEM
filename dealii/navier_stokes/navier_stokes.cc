@@ -326,12 +326,11 @@ namespace NS
   {
 	// momentum equation
 	assemble_matrix_vel();
-	assemble_rhs_vel();
+	assemble_rhs_vel();		
 	set_boundary_values(time+dt);
 	solve_vel();
 	
 	// pressure increment
-	assemble_matrix_phi();
 	assemble_rhs_phi();
 	solve_phi();
 	
@@ -499,6 +498,20 @@ namespace NS
   {
 	system_matrix_u = 0.;
 	system_matrix_v = 0.;
+
+	// for u
+	PETScWrappers::MPI::Vector locally_relevant_un, locally_relevant_unm1;
+	locally_relevant_un.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+	locally_relevant_unm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+	locally_relevant_un = un;
+	locally_relevant_unm1 = unm1;
+	
+	// for v
+	PETScWrappers::MPI::Vector locally_relevant_vn, locally_relevant_vnm1;
+	locally_relevant_vn.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+	locally_relevant_vnm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
+	locally_relevant_vn = vn;
+	locally_relevant_vnm1 = vnm1;
 	
     // create a quadrature rule
     // Recall that 2*Nq-1>=degree => Nq>=(degree+1)/2
@@ -530,20 +543,6 @@ namespace NS
         {
           cell_matrix_u = 0.;
 		  cell_matrix_v = 0.;
-
-		  // for u
-		  PETScWrappers::MPI::Vector locally_relevant_un, locally_relevant_unm1;
-		  locally_relevant_un.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-		  locally_relevant_unm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-		  locally_relevant_un = un;
-		  locally_relevant_unm1 = unm1;
-		  
-		  // for v
-		  PETScWrappers::MPI::Vector locally_relevant_vn, locally_relevant_vnm1;
-		  locally_relevant_vn.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-		  locally_relevant_vnm1.reinit(locally_owned_dofs,locally_relevant_dofs,mpi_communicator);
-		  locally_relevant_vn = vn;
-		  locally_relevant_vnm1 = vnm1;
 	
 		  // get shape functions, their derivatives, etc at quad points
 		  fe_values.reinit(cell); 
@@ -1096,7 +1095,7 @@ namespace NS
 		
 		// more numerical parameters
 		min_cell_diameter = GridTools::minimal_cell_diameter(triangulation);
-		cfl=0.1;
+		cfl=0.5;
 		dt = output_time/int(output_time/(cfl*min_cell_diameter));
 		
 		// ***** ASSEMBLE MATRICES ***** //
