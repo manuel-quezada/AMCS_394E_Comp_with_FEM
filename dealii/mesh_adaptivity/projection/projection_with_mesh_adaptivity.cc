@@ -52,10 +52,10 @@ namespace Projection
   {
     double x = p[0];
     double y = p[1];
-	double radius = std::sqrt(std::pow(x-0.5,2.0)+std::pow(y-0.5,2.0));
+    double radius = std::sqrt(std::pow(x-0.5,2.0)+std::pow(y-0.5,2.0));
 
-	//return (radius-0.2 <= 0 ? 1.0 : 0.0);
-	return 0.5*(-tanh((radius - 0.2)/0.005) + 1.0) ;
+    //return (radius-0.2 <= 0 ? 1.0 : 0.0);
+    return 0.5*(-tanh((radius - 0.2)/0.005) + 1.0) ;
   }
 
   template <int dim>  
@@ -67,7 +67,7 @@ namespace Projection
     
   private:
     void setup_system();
-	void refine_mesh();
+    void refine_mesh();
     void assemble_system();
     void solve();
     void output_results(const unsigned int cycle) const;
@@ -137,7 +137,7 @@ namespace Projection
     // The next step is to compute constraints like Dirichlet BCs and hanging nodes
     constraints.clear();
     constraints.reinit(locally_relevant_dofs);
-	DoFTools::make_hanging_node_constraints(dof_handler, constraints);
+    DoFTools::make_hanging_node_constraints(dof_handler, constraints);
     constraints.close();
 	
     // initializing the matrix with sparsity pattern.
@@ -158,15 +158,15 @@ namespace Projection
   {
     Vector<float> estimated_error_per_cell(triangulation.n_active_cells());
     KellyErrorEstimator<dim>::estimate(dof_handler,
-									   QGauss<dim - 1>(fe.degree + 1),
-									   std::map<types::boundary_id,
-									   const Function<dim> *>(),
-									   locally_relevant_solution,
-									   estimated_error_per_cell);
+				       QGauss<dim - 1>(fe.degree + 1),
+				       std::map<types::boundary_id,
+				       const Function<dim> *>(),
+				       locally_relevant_solution,
+				       estimated_error_per_cell);
     parallel::distributed::GridRefinement::refine_and_coarsen_fixed_number(triangulation,
-																		   estimated_error_per_cell,
-																		   0.3,
-																		   0.03);
+									   estimated_error_per_cell,
+									   0.3,
+									   0.03);
     triangulation.execute_coarsening_and_refinement();
   }
   
@@ -423,18 +423,18 @@ int main(int argc, char *argv[])
       
       return 1;
     }
-    catch (...)
-      {
-	std::cerr << std::endl
-		  << std::endl
-		  << "----------------------------------------------------"
-		  << std::endl;
-	std::cerr << "Unknown exception!" << std::endl
-		  << "Aborting!" << std::endl
-		  << "----------------------------------------------------"
-		  << std::endl;
-	return 1;
-      }
+  catch (...)
+    {
+      std::cerr << std::endl
+		<< std::endl
+		<< "----------------------------------------------------"
+		<< std::endl;
+      std::cerr << "Unknown exception!" << std::endl
+		<< "Aborting!" << std::endl
+		<< "----------------------------------------------------"
+		<< std::endl;
+      return 1;
+    }
   
   return 0;
 }
